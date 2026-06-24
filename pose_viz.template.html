@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Golf Swing Pose Analysis</title>
+<style>
+  :root{
+    --bg:#0a0e16; --panel:#111826; --panel2:#0d1420; --border:#1e2940;
+    --text:#e6ebf2; --muted:#8a99b3; --accent:#38bdf8;
+    --lead:#22d3ee; --trail:#f59e0b; --center:#94a3b8; --xf:#a78bfa;
+    --good:#34d399; --bad:#f87171;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:radial-gradient(1200px 800px at 70% -10%, #15203400, #0a0e16 60%), var(--bg);
+    color:var(--text); font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased; padding:14px; max-width:1680px; margin:0 auto;
+  }
+  h1{font-size:18px; margin:0; font-weight:650; letter-spacing:.2px}
+  .sub{color:var(--muted); font-size:12px}
+  header{display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:14px}
+  header .tags{display:flex; gap:8px; flex-wrap:wrap; margin-left:auto}
+  .tag{background:var(--panel); border:1px solid var(--border); border-radius:999px; padding:4px 11px; font-size:12px; color:var(--muted)}
+  .tag b{color:var(--text); font-weight:600}
+  .panel{background:linear-gradient(180deg,#121a2a,#0e1521); border:1px solid var(--border); border-radius:14px; padding:12px}
+  .panel h2{font-size:12px; text-transform:uppercase; letter-spacing:.8px; color:var(--muted); margin:0 0 10px; font-weight:600; display:flex; align-items:center; gap:8px}
+  .grid-top{display:grid; grid-template-columns:1.55fr 1fr; gap:14px}
+  @media(max-width:980px){.grid-top{grid-template-columns:1fr}}
+  .viewer{position:relative}
+  .viewer canvas{display:block; width:100%; border-radius:10px; background:
+     radial-gradient(900px 500px at 50% 0%, #16223a55, #0a0f1a00), #0a0f1a; cursor:grab}
+  .viewer canvas:active{cursor:grabbing}
+  .v2d canvas{cursor:default; background:#0a0f1a}
+  .overlay-hint{position:absolute; right:10px; bottom:8px; font-size:11px; color:var(--muted); background:#0a0f1aaa; padding:3px 8px; border-radius:6px; pointer-events:none}
+  .ctrls{display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; align-items:center}
+  button.btn,select,.chip{background:#16203356; color:var(--text); border:1px solid var(--border); border-radius:8px; padding:6px 11px; font-size:12px; cursor:pointer; font-family:inherit}
+  button.btn:hover,.chip:hover{border-color:#33507e; background:#1b2740}
+  .chip.on{background:#143a4a; border-color:#1f6f8b; color:#9fe9ff}
+  .chip{user-select:none; display:inline-flex; gap:6px; align-items:center}
+  select{padding:6px 8px}
+  .seg{display:inline-flex; border:1px solid var(--border); border-radius:8px; overflow:hidden}
+  .seg button{background:#0e1726; border:none; color:var(--muted); padding:6px 10px; font-size:12px; cursor:pointer}
+  .seg button.on{background:#173049; color:#cfe7ff}
+
+  /* timeline */
+  .timeline-wrap{margin:14px 0}
+  .transport{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:10px}
+  .playbtn{width:40px;height:40px;border-radius:10px;border:1px solid var(--border);background:#16223a;color:#dff1ff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .playbtn:hover{background:#1d3050}
+  .readout{font-variant-numeric:tabular-nums; color:var(--muted); font-size:13px}
+  .readout b{color:var(--text)}
+  .readout .evname{color:var(--accent); font-weight:600}
+  .track{position:relative; height:54px; margin-top:6px; user-select:none}
+  .track .rail{position:absolute; left:0; right:0; top:34px; height:8px; border-radius:5px; background:#0c1422; border:1px solid var(--border); overflow:hidden}
+  .track .fill{position:absolute; left:0; top:0; bottom:0; background:linear-gradient(90deg,#0e5a73,#22d3ee); width:0}
+  .track .phase{position:absolute; top:34px; height:8px; opacity:.35}
+  .track .play-tip{position:absolute; top:30px; width:3px; height:16px; background:#fff; border-radius:2px; transform:translateX(-50%); box-shadow:0 0 8px #fff8; pointer-events:none}
+  .marker{position:absolute; top:0; transform:translateX(-50%); cursor:pointer; text-align:center; width:46px}
+  .marker .dot{width:11px;height:11px;border-radius:50%;background:#16223a;border:2px solid var(--accent);margin:30px auto 0; box-shadow:0 0 0 3px #0a0e16}
+  .marker .lab{font-size:10px;color:var(--muted);margin-top:3px;line-height:1.1;white-space:nowrap}
+  .marker .pn{font-size:10px;font-weight:700;color:#cfe7ff}
+  .marker:hover .dot,.marker.active .dot{background:var(--accent); box-shadow:0 0 10px var(--accent)}
+  .marker.active .lab{color:var(--text)}
+
+  /* metrics */
+  .grid-metrics{display:grid; grid-template-columns:repeat(2,1fr); gap:14px; margin-top:14px}
+  @media(max-width:980px){.grid-metrics{grid-template-columns:1fr}}
+  .cards{display:grid; grid-template-columns:repeat(auto-fill,minmax(135px,1fr)); gap:10px}
+  .card{background:#0e1726; border:1px solid var(--border); border-radius:10px; padding:10px 11px}
+  .card .k{font-size:11px; color:var(--muted); display:flex; justify-content:space-between; gap:6px}
+  .card .v{font-size:22px; font-weight:650; font-variant-numeric:tabular-nums; margin-top:3px}
+  .card .v small{font-size:12px; color:var(--muted); font-weight:500; margin-left:3px}
+  .card .d{font-size:10.5px; color:#64748b; margin-top:3px; line-height:1.3}
+  .help{cursor:help; color:#475569; font-size:11px; border:1px solid #2a3a55; border-radius:50%; width:14px; height:14px; display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto}
+
+  .activebox{display:grid; grid-template-columns:repeat(3,1fr); gap:8px}
+  .activebox .row{background:#0e1726;border:1px solid var(--border);border-radius:8px;padding:8px}
+  .activebox .row .k{font-size:10.5px;color:var(--muted)}
+  .activebox .row .v{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}
+  .pose-title{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
+  .pose-title .pn{background:#143a4a;border:1px solid #1f6f8b;color:#9fe9ff;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700}
+  .pose-title .nm{font-size:15px;font-weight:600}
+  .pose-title .tm{color:var(--muted);font-size:12px;margin-left:auto;font-variant-numeric:tabular-nums}
+
+  table.events{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
+  table.events th,table.events td{padding:6px 7px;text-align:right;border-bottom:1px solid #16223a;white-space:nowrap}
+  table.events th{color:var(--muted);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;position:sticky;top:0;background:#0e1521}
+  table.events td:first-child,table.events th:first-child{text-align:left}
+  table.events td:nth-child(2),table.events th:nth-child(2){text-align:left}
+  table.events tbody tr{cursor:pointer}
+  table.events tbody tr:hover{background:#13203a}
+  table.events tbody tr.active{background:#102a3a;outline:1px solid #1f6f8b}
+  .tbl-scroll{max-height:260px;overflow:auto}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:8px}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:middle}
+  .chart-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .chart-head h2{margin:0}
+  .chart-head select{margin-left:auto}
+  canvas.chart{width:100%;display:block}
+  .footer{color:#475569;font-size:11px;text-align:center;margin:18px 0 4px}
+  .kbd{font-family:ui-monospace,monospace;background:#0e1726;border:1px solid var(--border);border-radius:4px;padding:0 5px;font-size:11px;color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>🏌️ Golf Swing Pose Analysis</h1>
+    <div class="sub" id="subtitle">loading…</div>
+  </div>
+  <div class="tags" id="tags"></div>
+</header>
+
+<div class="grid-top">
+  <!-- 3D viewer -->
+  <div class="panel viewer">
+    <h2>3D Pose <span style="color:#475569;font-weight:400;text-transform:none;letter-spacing:0">· drag to orbit · scroll to zoom</span></h2>
+    <div style="position:relative">
+      <canvas id="c3d" height="460"></canvas>
+      <div class="overlay-hint" id="hint3d"></div>
+    </div>
+    <div class="ctrls">
+      <div class="seg" id="viewseg">
+        <button data-view="face" class="on">Face-on</button>
+        <button data-view="dtl">Down-the-line</button>
+        <button data-view="top">Top</button>
+      </div>
+      <span class="chip" id="ch-trace">✦ Club/hand path</span>
+      <span class="chip" id="ch-unc">◑ Uncertainty color</span>
+      <span class="chip" id="ch-ghost">⟡ Key-pose ghosts</span>
+      <span class="chip" id="ch-spin">↻ Auto-rotate</span>
+      <button class="btn" id="resetcam">Reset view</button>
+    </div>
+  </div>
+
+  <!-- 2D viewer -->
+  <div class="panel viewer v2d">
+    <h2>2D Keypoints <span style="color:#475569;font-weight:400;text-transform:none;letter-spacing:0">· image space, fit to subject</span></h2>
+    <div style="display:flex;justify-content:center">
+      <canvas id="c2d" height="460"></canvas>
+    </div>
+    <div class="ctrls">
+      <span class="chip on" id="ch-bones2d">Skeleton</span>
+      <span class="chip" id="ch-unc2d">◑ Uncertainty color</span>
+      <span class="chip" id="ch-labels2d">Joint labels</span>
+    </div>
+    <div class="legend" id="legend2d"></div>
+  </div>
+</div>
+
+<!-- timeline -->
+<div class="panel timeline-wrap">
+  <div class="transport">
+    <button class="playbtn" id="play">▶</button>
+    <div class="seg" id="speedseg">
+      <button data-s="0.25">0.25×</button>
+      <button data-s="0.5">0.5×</button>
+      <button data-s="1" class="on">1×</button>
+      <button data-s="1.5">1.5×</button>
+    </div>
+    <span class="chip on" id="ch-loop">↺ Loop</span>
+    <div class="readout" id="readout"></div>
+  </div>
+  <div class="track" id="track">
+    <div class="rail"><div class="fill" id="fill"></div></div>
+    <div class="play-tip" id="playtip"></div>
+    <div id="markers"></div>
+  </div>
+</div>
+
+<!-- metrics -->
+<div class="grid-metrics">
+  <div class="panel">
+    <h2>Swing Summary Metrics</h2>
+    <div class="cards" id="derivedcards"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Active Key Position</h2>
+    <div class="pose-title" id="poseTitle"></div>
+    <div class="activebox" id="activebox"></div>
+  </div>
+
+  <div class="panel">
+    <div class="chart-head"><h2>Rotation Sequence (P1→P10)</h2></div>
+    <canvas id="chartRot" class="chart" height="220"></canvas>
+    <div class="legend" id="legRot"></div>
+  </div>
+
+  <div class="panel">
+    <div class="chart-head">
+      <h2>Continuous Biometrics</h2>
+      <select id="bioSel">
+        <option value="rotation">Body rotation (turn)</option>
+        <option value="tilt">Tilt</option>
+        <option value="bend">Bend / posture</option>
+        <option value="sway">Sway</option>
+      </select>
+    </div>
+    <canvas id="chartBio" class="chart" height="220"></canvas>
+    <div class="legend" id="legBio"></div>
+  </div>
+
+  <div class="panel" style="grid-column:1/-1">
+    <h2>Key Position Details</h2>
+    <div class="tbl-scroll">
+      <table class="events" id="evtable"></table>
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  Drag the 3D view to orbit · click a timeline marker or table row to jump · keys:
+  <span class="kbd">space</span> play/pause &nbsp; <span class="kbd">←</span>/<span class="kbd">→</span> step frame
+</div>
+
+<script id="pose-data" type="application/json">__POSE_DATA_JSON__</script>
+<script>
+"use strict";
+/* ===================== load data ===================== */
+const DATA = JSON.parse(document.getElementById('pose-data').textContent);
+const PS = DATA.pose_sequence;
+const J3 = PS.joints3d, J2 = PS.joints2d, UNC = PS.joint_uncertainties, BIO = PS.biometrics;
+const NF = PS.num_frames, FPS = PS.fps || 60;
+const IMW = PS.image_wh[0], IMH = PS.image_wh[1];
+const KP = DATA.key_positions;            // {P1:{frame,name,timestamp_ms}}
+const EVENTS = DATA.swing_metrics.events; // array with per-event metrics
+const DERIVED = DATA.swing_metrics.derived;
+const META = DATA.swing_metrics.meta;
+const HAND = DATA.handedness || META.handedness || 'R';
+
+/* SMPL-24 skeleton */
+const JOINT_NAMES=['pelvis','L_hip','R_hip','spine1','L_knee','R_knee','spine2','L_ankle','R_ankle','spine3','L_foot','R_foot','neck','L_collar','R_collar','head','L_shoulder','R_shoulder','L_elbow','R_elbow','L_wrist','R_wrist','L_hand','R_hand'];
+const PARENTS=[-1,0,0,0,1,2,3,4,5,6,7,8,9,9,9,12,13,14,16,17,18,19,20,21];
+const BONES=[]; for(let i=1;i<24;i++) BONES.push([i,PARENTS[i]]);
+const LEFT=new Set([1,4,7,10,13,16,18,20,22]), RIGHT=new Set([2,5,8,11,14,17,19,21,23]);
+// lead side = target side. R-handed golfer leads with LEFT.
+const leadIsLeft = (HAND==='R');
+const C_LEAD='#22d3ee', C_TRAIL='#f59e0b', C_CENTER='#9aa7bd';
+function sideColor(j){
+  const isLeft = LEFT.has(j), isRight = RIGHT.has(j);
+  if(!isLeft && !isRight) return C_CENTER;
+  const isLead = leadIsLeft ? isLeft : isRight;
+  return isLead ? C_LEAD : C_TRAIL;
+}
+const GRIP=[20,21]; // midpoint of wrists ~ club grip
+
+/* key-position frame list (sorted) */
+const KPlist = Object.keys(KP).sort((a,b)=>+a.slice(1)-+b.slice(1))
+  .map(k=>({pos:k, frame:KP[k].frame, name:KP[k].name, t:KP[k].timestamp_ms}));
+const eventByPos = {}; EVENTS.forEach(e=>eventByPos[e.position]=e);
+
+/* ===================== scene bounds ===================== */
+let center=[0,0,0], radius=1, groundY=0;
+(function(){
+  let mn=[1e9,1e9,1e9], mx=[-1e9,-1e9,-1e9], sp=[0,0,0], n=0;
+  for(const fr of J3) for(const p of fr){ for(let i=0;i<3;i++){mn[i]=Math.min(mn[i],p[i]);mx[i]=Math.max(mx[i],p[i]);} }
+  // center horizontally on mean pelvis, vertically on mid-height
+  let pc=[0,0,0]; for(const fr of J3){ for(let i=0;i<3;i++) pc[i]+=fr[0][i]; } pc=pc.map(v=>v/J3.length);
+  center=[pc[0], (mn[1]+mx[1])/2, pc[2]];
+  groundY=mn[1];
+  let r=0; for(const fr of J3) for(const p of fr){ const d=Math.hypot(p[0]-center[0],p[1]-center[1],p[2]-center[2]); if(d>r)r=d; }
+  radius=r;
+})();
+
+/* ===================== state ===================== */
+const state={
+  frame: KPlist[0]?KPlist[0].frame:0,
+  playing:false, speed:1, loop:true,
+  cam:{theta:0, phi:0.12, r:radius*2.6},
+  opt:{ trace:false, unc:false, ghost:false, spin:false,
+        bones2d:true, unc2d:false, labels2d:false },
+  bioGroup:'rotation'
+};
+const VIEWS={ face:{theta:0,phi:0.12}, dtl:{theta:Math.PI/2,phi:0.12}, top:{theta:0,phi:1.45} };
+
+/* ===================== canvas helpers ===================== */
+function fitCanvas(cv, cssH){
+  const dpr=Math.min(window.devicePixelRatio||1, 2);
+  const cssW=cv.clientWidth || cv.parentElement.clientWidth;
+  cv.width=Math.round(cssW*dpr); cv.height=Math.round(cssH*dpr);
+  cv.style.height=cssH+'px';
+  const ctx=cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
+  return {ctx, w:cssW, h:cssH};
+}
+
+/* ===================== 3D math ===================== */
+function sub(a,b){return [a[0]-b[0],a[1]-b[1],a[2]-b[2]];}
+function cross(a,b){return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
+function dot(a,b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
+function norm(a){const l=Math.hypot(a[0],a[1],a[2])||1;return [a[0]/l,a[1]/l,a[2]/l];}
+
+function makeCam(w,h){
+  const {theta,phi,r}=state.cam;
+  const dir=[Math.sin(theta)*Math.cos(phi), Math.sin(phi), Math.cos(theta)*Math.cos(phi)];
+  const camPos=[center[0]+r*dir[0], center[1]+r*dir[1], center[2]+r*dir[2]];
+  const fwd=norm(sub(center,camPos));
+  let right=norm(cross(fwd,[0,1,0]));
+  if(!isFinite(right[0])) right=[1,0,0];
+  const up=cross(right,fwd);
+  const fov=42*Math.PI/180;
+  const f=(h/2)/Math.tan(fov/2);
+  return {camPos,fwd,right,up,f,cx:w/2,cy:h/2};
+}
+function project(p,cam){
+  const v=sub(p,cam.camPos);
+  const z=dot(v,cam.fwd);
+  if(z<0.01) return null;
+  const x=dot(v,cam.right), y=dot(v,cam.up);
+  return {x:cam.cx + cam.f*x/z, y:cam.cy - cam.f*y/z, z};
+}
+
+/* ===================== 3D render ===================== */
+const c3d=document.getElementById('c3d'); let R3=fitCanvas(c3d,460);
+function uncColor(u){ // 0.03..0.24 -> green..red
+  const t=Math.max(0,Math.min(1,(u-0.03)/0.18));
+  const r=Math.round(60+t*195), g=Math.round(220-t*180), b=Math.round(120-t*70);
+  return `rgb(${r},${g},${b})`;
+}
+function draw3D(){
+  const {ctx,w,h}=R3; ctx.clearRect(0,0,w,h);
+  const cam=makeCam(w,h);
+  // ground grid
+  ctx.lineWidth=1;
+  const g=radius*1.15, step=g/5;
+  for(let i=-5;i<=5;i++){
+    for(const seg of [
+      [[center[0]-g,groundY,center[2]+i*step],[center[0]+g,groundY,center[2]+i*step]],
+      [[center[0]+i*step,groundY,center[2]-g],[center[0]+i*step,groundY,center[2]+g]]
+    ]){
+      const a=project(seg[0],cam), b=project(seg[1],cam); if(!a||!b)continue;
+      ctx.strokeStyle = (i===0)?'#27384f':'#172234';
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+    }
+  }
+  // key-pose ghosts
+  if(state.opt.ghost){
+    for(const kp of KPlist){ if(kp.frame===state.frame) continue;
+      drawSkeleton(ctx,cam,J3[kp.frame],null,0.10,1); }
+  }
+  // club / hand path trace up to current frame
+  if(state.opt.trace){
+    ctx.lineWidth=2;
+    let prev=null;
+    const start=0;
+    for(let fi=start;fi<=state.frame;fi++){
+      const a=J3[fi][GRIP[0]], b=J3[fi][GRIP[1]];
+      const mid=[(a[0]+b[0])/2,(a[1]+b[1])/2,(a[2]+b[2])/2];
+      const p=project(mid,cam); if(!p){prev=null;continue;}
+      if(prev){
+        const age=(state.frame-fi)/Math.max(1,state.frame-start);
+        ctx.strokeStyle=`rgba(167,139,250,${(1-age)*0.85+0.1})`;
+        ctx.beginPath(); ctx.moveTo(prev.x,prev.y); ctx.lineTo(p.x,p.y); ctx.stroke();
+      }
+      prev=p;
+    }
+  }
+  // current skeleton
+  drawSkeleton(ctx,cam,J3[state.frame],UNC[state.frame],1,1);
+}
+function drawSkeleton(ctx,cam,joints,unc,alpha,lw){
+  const pr=joints.map(p=>project(p,cam));
+  // bones depth-sorted
+  const segs=[];
+  for(const [a,b] of BONES){ if(!pr[a]||!pr[b])continue;
+    segs.push({a,b,z:(pr[a].z+pr[b].z)/2}); }
+  segs.sort((p,q)=>q.z-p.z);
+  ctx.lineCap='round';
+  for(const s of segs){
+    const child = LEFT.has(s.a)||RIGHT.has(s.a) ? s.a : s.b;
+    ctx.strokeStyle = state.opt.unc&&unc ? uncColor((unc[s.a]+unc[s.b])/2) : sideColor(child);
+    ctx.globalAlpha=alpha;
+    ctx.lineWidth=4.2*lw; ctx.beginPath(); ctx.moveTo(pr[s.a].x,pr[s.a].y); ctx.lineTo(pr[s.b].x,pr[s.b].y); ctx.stroke();
+  }
+  // joints
+  for(let j=0;j<24;j++){ const p=pr[j]; if(!p)continue;
+    let col = state.opt.unc&&unc ? uncColor(unc[j]) : sideColor(j);
+    let rr = (j===0||j===15)?4.5:3.2;
+    if(state.opt.unc&&unc) rr=2.5+unc[j]*16;
+    ctx.globalAlpha=alpha; ctx.fillStyle=col;
+    ctx.beginPath(); ctx.arc(p.x,p.y,rr*lw,0,7); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+
+/* ===================== 2D render ===================== */
+const c2d=document.getElementById('c2d');
+// global subject bbox across all frames (so the skeleton fills the panel, faithful proportions)
+const BBOX=(()=>{ let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  for(const fr of J2) for(const p of fr){ x0=Math.min(x0,p[0]);y0=Math.min(y0,p[1]);x1=Math.max(x1,p[0]);y1=Math.max(y1,p[1]); }
+  const px=(x1-x0)*0.12, py=(y1-y0)*0.06; // padding
+  return {x:x0-px, y:y0-py, w:(x1-x0)+2*px, h:(y1-y0)+2*py};
+})();
+function setup2D(){
+  const maxH=460; const contW=c2d.parentElement.clientWidth;
+  let h=maxH, w=BBOX.w/BBOX.h*h; if(w>contW){ w=contW; h=BBOX.h/BBOX.w*w; }
+  c2d.style.width=w+'px';
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  c2d.width=Math.round(w*dpr); c2d.height=Math.round(h*dpr);
+  c2d.style.height=h+'px';
+  const ctx=c2d.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
+  const sx=w/BBOX.w, sy=h/BBOX.h;
+  return {ctx,w,h,sx,sy,map:p=>[(p[0]-BBOX.x)*sx,(p[1]-BBOX.y)*sy]};
+}
+let R2=setup2D();
+function draw2D(){
+  const {ctx,w,h,map}=R2; ctx.clearRect(0,0,w,h);
+  // frame border
+  ctx.strokeStyle='#1a2740'; ctx.lineWidth=1; ctx.strokeRect(0.5,0.5,w-1,h-1);
+  const J=J2[state.frame], unc=UNC[state.frame];
+  const P=J.map(map);
+  if(state.opt.bones2d){
+    ctx.lineCap='round'; ctx.lineWidth=3;
+    for(const [a,b] of BONES){
+      const child=LEFT.has(a)||RIGHT.has(a)?a:b;
+      ctx.strokeStyle=state.opt.unc2d?uncColor((unc[a]+unc[b])/2):sideColor(child);
+      ctx.beginPath(); ctx.moveTo(P[a][0],P[a][1]); ctx.lineTo(P[b][0],P[b][1]); ctx.stroke();
+    }
+  }
+  for(let j=0;j<24;j++){
+    let col=state.opt.unc2d?uncColor(unc[j]):sideColor(j);
+    let r=(j===0||j===15)?4:3; if(state.opt.unc2d) r=2.4+unc[j]*15;
+    ctx.fillStyle=col; ctx.beginPath(); ctx.arc(P[j][0],P[j][1],r,0,7); ctx.fill();
+    if(state.opt.labels2d){ ctx.fillStyle='#cbd5e1'; ctx.font='9px sans-serif'; ctx.fillText(JOINT_NAMES[j],P[j][0]+4,P[j][1]-3); }
+  }
+}
+
+/* ===================== charts ===================== */
+function autoRange(series){
+  let mn=1e9,mx=-1e9;
+  for(const s of series) for(const p of s.pts){ if(p[1]<mn)mn=p[1]; if(p[1]>mx)mx=p[1]; }
+  if(mn===mx){mn-=1;mx+=1;}
+  const pad=(mx-mn)*0.10; return [mn-pad,mx+pad];
+}
+function drawChart(cv, cfg){
+  const R=fitCanvas(cv, cv.dataset.h?+cv.dataset.h:220);
+  const {ctx,w,h}=R;
+  ctx.clearRect(0,0,w,h);
+  const m={l:42,r:12,t:10,b:22};
+  const pw=w-m.l-m.r, ph=h-m.t-m.b;
+  const [xMin,xMax]=[cfg.xMin,cfg.xMax];
+  const [yMin,yMax]= cfg.yMin!=null?[cfg.yMin,cfg.yMax]:autoRange(cfg.series);
+  const X=x=>m.l+(x-xMin)/(xMax-xMin)*pw;
+  const Y=y=>m.t+(1-(y-yMin)/(yMax-yMin))*ph;
+  // grid + y ticks
+  ctx.strokeStyle='#16223a'; ctx.fillStyle='#5b6b86'; ctx.font='10px sans-serif'; ctx.lineWidth=1;
+  const ticks=4;
+  for(let i=0;i<=ticks;i++){ const yv=yMin+(yMax-yMin)*i/ticks, yp=Y(yv);
+    ctx.beginPath(); ctx.moveTo(m.l,yp); ctx.lineTo(w-m.r,yp); ctx.stroke();
+    ctx.textAlign='right'; ctx.textBaseline='middle'; ctx.fillText(yv.toFixed(Math.abs(yMax-yMin)<5?1:0),m.l-5,yp);
+  }
+  // zero line
+  if(yMin<0&&yMax>0){ ctx.strokeStyle='#2b3d59'; ctx.beginPath(); ctx.moveTo(m.l,Y(0)); ctx.lineTo(w-m.r,Y(0)); ctx.stroke(); }
+  // event ticks
+  if(cfg.events) for(const e of cfg.events){ const xp=X(e.x);
+    ctx.strokeStyle='#243450'; ctx.setLineDash([2,3]); ctx.beginPath(); ctx.moveTo(xp,m.t); ctx.lineTo(xp,m.t+ph); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle='#46587a'; ctx.textAlign='center'; ctx.textBaseline='top'; ctx.font='9px sans-serif'; ctx.fillText(e.label,xp,m.t+ph+4);
+  }
+  // series
+  for(const s of cfg.series){
+    ctx.strokeStyle=s.color; ctx.lineWidth=2; ctx.beginPath();
+    let started=false;
+    for(const p of s.pts){ const xp=X(p[0]),yp=Y(p[1]); if(!started){ctx.moveTo(xp,yp);started=true;}else ctx.lineTo(xp,yp); }
+    ctx.stroke();
+    if(s.dots) for(const p of s.pts){ ctx.fillStyle=s.color; ctx.beginPath(); ctx.arc(X(p[0]),Y(p[1]),2.6,0,7); ctx.fill(); }
+  }
+  // playhead
+  const xp=X(state.frame);
+  if(state.frame>=xMin&&state.frame<=xMax){
+    ctx.strokeStyle='#ffffff'; ctx.globalAlpha=.85; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(xp,m.t); ctx.lineTo(xp,m.t+ph); ctx.stroke(); ctx.globalAlpha=1;
+  }
+}
+const chartRot=document.getElementById('chartRot');
+const chartBio=document.getElementById('chartBio');
+
+function rotChartCfg(){
+  const ev=EVENTS.filter(e=>e.frame_index!=null);
+  const mk=key=>({pts:ev.map(e=>[e.frame_index, e[key]]), dots:true});
+  return {
+    xMin:0,xMax:NF-1,
+    events:KPlist.map(k=>({x:k.frame,label:k.pos})),
+    series:[
+      {...mk('thorax_yaw_deg'),color:'#22d3ee',name:'Thorax yaw'},
+      {...mk('pelvis_yaw_deg'),color:'#f59e0b',name:'Pelvis yaw'},
+      {...mk('x_factor_deg'),  color:'#a78bfa',name:'X-Factor'},
+    ]
+  };
+}
+const BIO_GROUPS={
+  rotation:{unit:'°',ser:[
+    {key:'shoulder_turn',name:'Shoulder turn',color:'#22d3ee'},
+    {key:'hip_turn',name:'Hip turn',color:'#f59e0b'},
+    {derived:b=>b.shoulder_turn-b.hip_turn,name:'X-Factor (sh−hip)',color:'#a78bfa'},
+  ]},
+  tilt:{unit:'°',ser:[
+    {key:'shoulder_tilt',name:'Shoulder tilt',color:'#22d3ee'},
+    {key:'hip_tilt',name:'Hip tilt',color:'#f59e0b'},
+  ]},
+  bend:{unit:'°',ser:[
+    {key:'shoulder_bend',name:'Shoulder bend',color:'#22d3ee'},
+    {key:'hip_bend',name:'Hip bend',color:'#f59e0b'},
+  ]},
+  sway:{unit:'',ser:[
+    {key:'shoulder_sway',name:'Shoulder sway',color:'#22d3ee'},
+    {key:'hip_sway',name:'Hip sway',color:'#f59e0b'},
+  ]},
+};
+function bioChartCfg(){
+  const g=BIO_GROUPS[state.bioGroup];
+  const series=g.ser.map(s=>({
+    color:s.color,name:s.name,
+    pts:BIO.map((b,i)=>[i, s.derived?s.derived(b):b[s.key]])
+  }));
+  return {xMin:0,xMax:NF-1,series,events:KPlist.map(k=>({x:k.frame,label:k.pos}))};
+}
+function drawCharts(){
+  drawChart(chartRot, rotChartCfg());
+  drawChart(chartBio, bioChartCfg());
+}
+function buildLegend(el, items){
+  el.innerHTML=items.map(i=>`<span><i style="background:${i.color}"></i>${i.name}</span>`).join('');
+}
+
+/* ===================== metrics UI ===================== */
+const DERIVED_META={
+  x_factor_top_deg:{label:'X-Factor @ Top',unit:'°',d:'Shoulder turn beyond hips at the top'},
+  pelvis_turn_top_deg:{label:'Pelvis turn @ Top',unit:'°',d:'Hip rotation from address'},
+  thorax_turn_top_deg:{label:'Thorax turn @ Top',unit:'°',d:'Shoulder rotation from address'},
+  tempo_ratio:{label:'Tempo ratio',unit:':1',d:'Backswing : downswing time'},
+  spine_bend_change_deg:{label:'Spine bend Δ',unit:'°',d:'Posture change address→top'},
+  sway_hip_widths:{label:'Lateral sway',unit:'hw',d:'Pelvis sway in hip-widths'},
+  pelvis_yaw_rate_P4_P6_deg_s:{label:'Pelvis fire rate',unit:'°/s',d:'Hip rotation speed, transition→impact'},
+};
+function fmt(v,dec=1){return (typeof v==='number')? v.toFixed(dec):v;}
+function buildDerived(){
+  const el=document.getElementById('derivedcards'); el.innerHTML='';
+  for(const [k,meta] of Object.entries(DERIVED_META)){
+    if(DERIVED[k]==null) continue;
+    const dec=(k==='tempo_ratio'||k==='sway_hip_widths')?2:(k.includes('rate')?0:1);
+    el.insertAdjacentHTML('beforeend',
+      `<div class="card"><div class="k"><span>${meta.label}</span><span class="help" title="${meta.d}">?</span></div>
+       <div class="v">${fmt(DERIVED[k],dec)}<small>${meta.unit}</small></div>
+       <div class="d">${meta.d}</div></div>`);
+  }
+}
+function activePos(){ // nearest key position at or before frame, else nearest
+  let best=KPlist[0], bd=1e9;
+  for(const k of KPlist){ const d=Math.abs(k.frame-state.frame); if(d<bd){bd=d;best=k;} }
+  return best;
+}
+function buildActive(){
+  const kp=activePos(), e=eventByPos[kp.pos];
+  document.getElementById('poseTitle').innerHTML=
+    `<span class="pn">${kp.pos}</span><span class="nm">${kp.name}</span><span class="tm">frame ${kp.frame} · ${(kp.t/1000).toFixed(2)} s</span>`;
+  const rows=[
+    ['Pelvis yaw',fmt(e.pelvis_yaw_deg),'°'],
+    ['Thorax yaw',fmt(e.thorax_yaw_deg),'°'],
+    ['X-Factor',fmt(e.x_factor_deg),'°'],
+    ['Lead knee',fmt(e.lead_knee_flex_deg),'°'],
+    ['Trail knee',fmt(e.trail_knee_flex_deg),'°'],
+    ['Lead elbow',fmt(e.lead_elbow_flex_deg),'°'],
+    ['Trail elbow',fmt(e.trail_elbow_flex_deg),'°'],
+    ['Hip drop',fmt(e.hip_drop_cm),'cm'],
+  ];
+  document.getElementById('activebox').innerHTML=rows.map(r=>
+    `<div class="row"><div class="k">${r[0]}</div><div class="v">${r[1]}<small style="color:#64748b;font-size:11px"> ${r[2]}</small></div></div>`).join('');
+}
+function buildTable(){
+  const cols=[['position','P'],['name','Position'],['frame_index','Frame'],['timestamp_ms','t(s)'],
+    ['pelvis_yaw_deg','Pelvis°'],['thorax_yaw_deg','Thorax°'],['x_factor_deg','X-Fac°'],
+    ['lead_knee_flex_deg','LKnee°'],['trail_knee_flex_deg','TKnee°'],
+    ['lead_elbow_flex_deg','LElb°'],['trail_elbow_flex_deg','TElb°'],['hip_drop_cm','HipDrop']];
+  let html='<thead><tr>'+cols.map(c=>`<th>${c[1]}</th>`).join('')+'</tr></thead><tbody>';
+  for(const e of EVENTS){
+    html+=`<tr data-frame="${e.frame_index}" data-pos="${e.position}">`+cols.map(c=>{
+      let v=e[c[0]];
+      if(c[0]==='timestamp_ms') v=(v/1000).toFixed(2);
+      else if(typeof v==='number') v=v.toFixed(c[0]==='hip_drop_cm'?1:1);
+      return `<td>${v}</td>`;
+    }).join('')+'</tr>';
+  }
+  html+='</tbody>';
+  const t=document.getElementById('evtable'); t.innerHTML=html;
+  t.querySelectorAll('tbody tr').forEach(tr=>tr.onclick=()=>jumpFrame(+tr.dataset.frame));
+}
+function highlightTable(){
+  const kp=activePos();
+  document.querySelectorAll('#evtable tbody tr').forEach(tr=>
+    tr.classList.toggle('active', tr.dataset.pos===kp.pos));
+}
+
+/* ===================== timeline ===================== */
+function buildMarkers(){
+  const el=document.getElementById('markers'); el.innerHTML='';
+  // phase shading between key positions
+  for(const k of KPlist){
+    const left=k.frame/(NF-1)*100;
+    el.insertAdjacentHTML('beforeend',
+      `<div class="marker" data-frame="${k.frame}" data-pos="${k.pos}" style="left:${left}%">
+        <div class="dot"></div><div class="pn">${k.pos}</div><div class="lab">${k.name}</div></div>`);
+  }
+  el.querySelectorAll('.marker').forEach(mk=>mk.onclick=()=>jumpFrame(+mk.dataset.frame));
+}
+function updateTimeline(){
+  const f=state.frame/(NF-1);
+  document.getElementById('fill').style.width=(f*100)+'%';
+  document.getElementById('playtip').style.left=(f*100)+'%';
+  const kp=activePos();
+  document.querySelectorAll('#markers .marker').forEach(mk=>
+    mk.classList.toggle('active', mk.dataset.pos===kp.pos));
+  const tms=(state.frame/FPS*1000);
+  const onEvent=KPlist.find(k=>k.frame===state.frame);
+  document.getElementById('readout').innerHTML=
+    `frame <b>${state.frame}</b> / ${NF-1} &nbsp;·&nbsp; <b>${(tms/1000).toFixed(2)}</b> s `+
+    (onEvent?`&nbsp;·&nbsp; <span class="evname">${onEvent.pos} ${onEvent.name}</span>`:'');
+}
+const track=document.getElementById('track');
+function trackToFrame(clientX){
+  const r=track.getBoundingClientRect();
+  let f=(clientX-r.left)/r.width; f=Math.max(0,Math.min(1,f));
+  jumpFrame(Math.round(f*(NF-1)));
+}
+let scrubbing=false;
+track.addEventListener('pointerdown',e=>{ if(e.target.closest('.marker'))return; scrubbing=true; track.setPointerCapture(e.pointerId); state.playing=false; updatePlayBtn(); trackToFrame(e.clientX); });
+track.addEventListener('pointermove',e=>{ if(scrubbing) trackToFrame(e.clientX); });
+track.addEventListener('pointerup',()=>scrubbing=false);
+
+/* ===================== playback ===================== */
+function jumpFrame(f){ state.frame=Math.max(0,Math.min(NF-1,f)); syncAll(); }
+function updatePlayBtn(){ document.getElementById('play').textContent=state.playing?'❚❚':'▶'; }
+document.getElementById('play').onclick=()=>{ state.playing=!state.playing; if(state.frame>=NF-1)state.frame=0; updatePlayBtn(); };
+
+let last=null, acc=0;
+function loop(ts){
+  if(last==null)last=ts; const dt=(ts-last)/1000; last=ts;
+  if(state.opt.spin){ state.cam.theta+=dt*0.5; }
+  if(state.playing){
+    acc+=dt*FPS*state.speed;
+    if(acc>=1){ state.frame+=Math.floor(acc); acc-=Math.floor(acc);
+      if(state.frame>=NF-1){ if(state.loop){state.frame=0;} else {state.frame=NF-1; state.playing=false; updatePlayBtn();} }
+      lightSync();
+    }
+  }
+  draw3D();
+  requestAnimationFrame(loop);
+}
+// full sync (frame changed by user) -> redraw everything
+function syncAll(){ draw3D(); draw2D(); drawCharts(); updateTimeline(); buildActive(); highlightTable(); }
+// light sync during playback (avoid rebuilding DOM-heavy bits every frame is fine here, it's cheap)
+function lightSync(){ draw2D(); drawCharts(); updateTimeline(); buildActive(); highlightTable(); }
+
+/* ===================== controls wiring ===================== */
+function chip(id,key,onChange){
+  const el=document.getElementById(id);
+  el.classList.toggle('on', state.opt[key]);
+  el.onclick=()=>{ state.opt[key]=!state.opt[key]; el.classList.toggle('on',state.opt[key]); if(onChange)onChange(); syncAll(); };
+}
+chip('ch-trace','trace'); chip('ch-unc','unc'); chip('ch-ghost','ghost');
+chip('ch-bones2d','bones2d'); chip('ch-unc2d','unc2d'); chip('ch-labels2d','labels2d');
+document.getElementById('ch-spin').onclick=function(){ state.opt.spin=!state.opt.spin; this.classList.toggle('on',state.opt.spin); };
+document.getElementById('ch-loop').onclick=function(){ state.loop=!state.loop; this.classList.toggle('on',state.loop); };
+
+document.getElementById('viewseg').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#viewseg button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+  const v=VIEWS[b.dataset.view]; state.cam.theta=v.theta; state.cam.phi=v.phi; state.opt.spin=false; document.getElementById('ch-spin').classList.remove('on');
+});
+document.getElementById('speedseg').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#speedseg button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); state.speed=+b.dataset.s;
+});
+document.getElementById('resetcam').onclick=()=>{ state.cam={theta:0,phi:0.12,r:radius*2.6}; state.opt.spin=false; document.getElementById('ch-spin').classList.remove('on');
+  document.querySelectorAll('#viewseg button').forEach(x=>x.classList.remove('on')); document.querySelector('#viewseg [data-view=face]').classList.add('on'); };
+document.getElementById('bioSel').onchange=function(){ state.bioGroup=this.value; buildLegend(document.getElementById('legBio'),BIO_GROUPS[this.value].ser.map(s=>({name:s.name,color:s.color}))); drawCharts(); };
+
+/* 3D orbit + zoom */
+let drag=null;
+c3d.addEventListener('pointerdown',e=>{ drag={x:e.clientX,y:e.clientY}; c3d.setPointerCapture(e.pointerId); state.opt.spin=false; document.getElementById('ch-spin').classList.remove('on'); });
+c3d.addEventListener('pointermove',e=>{ if(!drag)return;
+  const dx=e.clientX-drag.x, dy=e.clientY-drag.y; drag={x:e.clientX,y:e.clientY};
+  state.cam.theta-=dx*0.008; state.cam.phi=Math.max(-1.5,Math.min(1.5,state.cam.phi+dy*0.008));
+  document.querySelectorAll('#viewseg button').forEach(x=>x.classList.remove('on'));
+});
+c3d.addEventListener('pointerup',()=>drag=null);
+c3d.addEventListener('wheel',e=>{ e.preventDefault(); state.cam.r*=(1+Math.sign(e.deltaY)*0.08); state.cam.r=Math.max(radius*0.8,Math.min(radius*8,state.cam.r)); },{passive:false});
+
+/* keyboard */
+window.addEventListener('keydown',e=>{
+  if(e.code==='Space'){ e.preventDefault(); document.getElementById('play').click(); }
+  else if(e.code==='ArrowRight'){ state.playing=false;updatePlayBtn(); jumpFrame(state.frame+1); }
+  else if(e.code==='ArrowLeft'){ state.playing=false;updatePlayBtn(); jumpFrame(state.frame-1); }
+});
+
+/* resize */
+let rt=null;
+window.addEventListener('resize',()=>{ clearTimeout(rt); rt=setTimeout(()=>{ R3=fitCanvas(c3d,460); R2=setup2D(); syncAll(); },120); });
+
+/* ===================== header ===================== */
+function buildHeader(){
+  document.getElementById('subtitle').textContent=
+    `${NF} frames · ${FPS} fps · ${(NF/FPS).toFixed(1)} s · SMPL-24 skeleton`;
+  const dur=(NF/FPS).toFixed(1);
+  document.getElementById('tags').innerHTML=[
+    `Handedness <b>${HAND==='R'?'Right':'Left'}</b>`,
+    `Key events <b>${KPlist.length}</b>`,
+    `Tempo <b>${fmt(DERIVED.tempo_ratio,2)}:1</b>`,
+    `X-Factor@Top <b>${fmt(DERIVED.x_factor_top_deg)}°</b>`,
+    `Source <b>${DATA.key_positions_source||'—'}</b>`,
+  ].map(t=>`<span class="tag">${t}</span>`).join('');
+}
+function buildLegends(){
+  document.getElementById('legend2d').innerHTML=
+    `<span><i style="background:${C_LEAD}"></i>Lead side (${leadIsLeft?'left':'right'})</span>`+
+    `<span><i style="background:${C_TRAIL}"></i>Trail side (${leadIsLeft?'right':'left'})</span>`+
+    `<span><i style="background:${C_CENTER}"></i>Spine / center</span>`+
+    `<span><i style="background:linear-gradient(90deg,#3cdc78,#ff4040)"></i>Uncertainty low→high</span>`;
+  buildLegend(document.getElementById('legRot'),[
+    {name:'Thorax yaw',color:'#22d3ee'},{name:'Pelvis yaw',color:'#f59e0b'},{name:'X-Factor',color:'#a78bfa'}]);
+  buildLegend(document.getElementById('legBio'),BIO_GROUPS.rotation.ser.map(s=>({name:s.name,color:s.color})));
+}
+
+/* ===================== init ===================== */
+buildHeader(); buildDerived(); buildMarkers(); buildTable(); buildLegends();
+syncAll();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
